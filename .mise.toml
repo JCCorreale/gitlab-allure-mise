@@ -1,0 +1,20 @@
+[tools]
+python = "{{ get_env(name='PYTHON_VERSION', default='3.12') }}"
+node = "22"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[tasks."allure:serve"]
+
+description = "Download Allure results from GitLab pipeline and serve them"
+
+usage = '''
+arg "<pipeline>" help="Pipeline ID"
+'''
+
+run = [
+'npm install --global allure-commandline',
+'pip install -r scripts/requirements.txt',
+'python scripts/allure_serve.py usage_pipeline'
+]

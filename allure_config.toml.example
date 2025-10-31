@@ -1,0 +1,4 @@
+url = "https://gitlab.mycompany.com"
+project = "group/subgroup/my-project"
+token = "glpat-xxxxxxxxxxxx"
+job_name = "test-report"
