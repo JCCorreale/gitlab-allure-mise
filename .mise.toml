@@ -10,13 +10,12 @@ _.python.venv = { path = ".venv", create = true }
 description = "Download Allure results from GitLab pipeline and serve them"
 
 usage = '''
-
 '''
 
-#Optional flags:
+#Optional flags (precedence):
+#--dir <path>       Serve existing allure results and exit (overrides all)
 #--outdir <name>    Save under out/<name>
-#--use-tmp-dir      Use a temporary directory
-#--serve-only <dir> Serve existing allure results and exit
+#--use-tmp-dir      Use a temporary directory (ignored if --outdir is set)
 
 run = [
 'npm install --global allure-commandline',

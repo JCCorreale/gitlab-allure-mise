@@ -16,15 +16,15 @@ print("Version info:", sys.version_info)
 
 # --- Args ---
 args = sys.argv[1:]
-serve_only_dir = None
+dir_override = None
 use_tmp_dir = False
 custom_outdir = None
-# Flags: --serve-only <path>, --use-tmp-dir, --outdir <name>
+# Flags: --dir <path> (serve existing), --use-tmp-dir, --outdir <name>
 parsed = []
 while args:
     arg = args.pop(0)
-    if arg == "--serve-only" and args:
-        serve_only_dir = args.pop(0)
+    if arg == "--dir" and args:
+        dir_override = args.pop(0)
     elif arg == "--use-tmp-dir":
         use_tmp_dir = True
     elif arg == "--outdir" and args:
@@ -34,12 +34,12 @@ while args:
 # replace sys.argv for downstream if needed
 sys.argv = sys.argv[:1] + parsed
 
-if serve_only_dir:
-    if not os.path.isdir(serve_only_dir):
-        print(f"❌ Directory not found: {serve_only_dir}")
+if dir_override:
+    if not os.path.isdir(dir_override):
+        print(f"❌ Directory not found: {dir_override}")
         sys.exit(1)
-    print(f"🚀 Launching Allure to serve existing results from {serve_only_dir} ...")
-    subprocess.run(["allure", "serve", serve_only_dir], shell=True)
+    print(f"🚀 Launching Allure to serve existing results from {dir_override} ...")
+    subprocess.run(["allure", "serve", dir_override], shell=True)
     sys.exit(0)
 
 # --- Load allure_config.toml if present ---
@@ -164,15 +164,19 @@ def latest_pipeline_for_schedule(schedule_id: str):
     return max(data, key=lambda p: p.get("id", 0))
 
 # --- Output directory ---
-if use_tmp_dir:
+if custom_outdir:
+    base_out = Path("out")
+    base_out.mkdir(exist_ok=True)
+    base_dir = str(base_out / custom_outdir)
+    Path(base_dir).mkdir(parents=True, exist_ok=True)
+elif use_tmp_dir:
     base_dir_obj = tempfile.TemporaryDirectory(prefix="allure-report_", delete=False)
     base_dir = base_dir_obj.name
 else:
     base_out = Path("out")
     base_out.mkdir(exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y_%m_%d-%H_%M")
-    dir_name = custom_outdir or timestamp
-    base_dir = str(base_out / dir_name)
+    base_dir = str(base_out / timestamp)
     Path(base_dir).mkdir(parents=True, exist_ok=True)
 
 combined_dir = os.path.join(base_dir, "combined_allure_results")
@@ -181,10 +185,12 @@ print(f"📂 Created output directory {base_dir}")
 
 # --- Main logic ---
 any_success = False
+failures = []
 seen = set()
 for entry in pipelines_cfg:
     if not isinstance(entry, dict):
         print(f"⚠️ Invalid pipeline entry {entry}, skipping")
+        failures.append({"label": str(entry), "error": "invalid_entry"})
         continue
     label = entry.get("label") or entry.get("name") or "pipeline"
     pipeline_id = entry.get("pipeline_id")
@@ -201,25 +207,40 @@ for entry in pipelines_cfg:
     info = None
     if pipeline_id:
         info = pipeline_info(str(pipeline_id))
+        if not info:
+            failures.append({"label": label, "pipeline_id": str(pipeline_id), "error": "pipeline_fetch_failed"})
+            continue
     elif schedule_id:
         info = latest_pipeline_for_schedule(str(schedule_id))
+        if not info:
+            failures.append({"label": label, "schedule_id": str(schedule_id), "error": "no_pipeline_found"})
+            continue
     else:
         print(f"❌ [{label}] Missing pipeline_id or schedule_id, skipping")
+        failures.append({"label": label, "error": "missing_ids"})
         continue
 
-    if not info:
-        continue
     resolved_id = info.get("id")
     status = info.get("status")
     print(f"🔍 [{label}] Using pipeline {resolved_id} (status={status})")
     if status != "success":
         print(f"❌ [{label}] Pipeline {resolved_id} is not successful (status={status})")
+        failures.append({"label": label, "pipeline_id": str(resolved_id), "schedule_id": str(schedule_id) if schedule_id else None, "error": {"status": status}})
         continue
 
     allure_src = download_artifacts(str(resolved_id), base_dir, label)
     if allure_src:
         copy_allure_results(allure_src, combined_dir, label)
         any_success = True
+    else:
+        failures.append({"label": label, "pipeline_id": str(resolved_id), "schedule_id": str(schedule_id) if schedule_id else None, "error": "artifact_download_failed"})
+
+if failures:
+    failures_path = Path(base_dir) / "failures.txt"
+    with open(failures_path, "w", encoding="utf-8") as f:
+        for item in failures:
+            f.write(f"{item}\n")
+    print(f"⚠️ Failures logged to {failures_path}")
 
 if not any_success:
     print("❌ No successful pipelines to serve.")

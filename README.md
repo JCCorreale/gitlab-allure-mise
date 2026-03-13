@@ -26,11 +26,11 @@ Run the Mise task to download artifacts and serve them:
 
 `mise run allure:serve`
 
-**Output directory options:**
-- Default: saves under `out/<yyyy_MM_dd-hh_mm>/combined_allure_results` and serves from there.
+**Output directory options (precedence):**
+- `--dir <path>`: serve an existing allure-results directory (skips download); overrides everything.
 - `--outdir <name>`: saves under `out/<name>/...`.
-- `--use-tmp-dir`: uses a temp dir like before.
-- `--serve-only <path>`: skip downloads, just `allure serve <path>`.
+- `--use-tmp-dir`: uses a temp dir; ignored if `--outdir` is set.
+- Default (no flags): saves under `out/<yyyy_MM_dd-hh_mm>/combined_allure_results` and serves from there.
 
 **Configuration (pipelines with label):**
 
