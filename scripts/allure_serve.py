@@ -14,6 +14,34 @@ from pathlib import Path
 print("Python version:", sys.version)
 print("Version info:", sys.version_info)
 
+# --- Args ---
+args = sys.argv[1:]
+serve_only_dir = None
+use_tmp_dir = False
+custom_outdir = None
+# Flags: --serve-only <path>, --use-tmp-dir, --outdir <name>
+parsed = []
+while args:
+    arg = args.pop(0)
+    if arg == "--serve-only" and args:
+        serve_only_dir = args.pop(0)
+    elif arg == "--use-tmp-dir":
+        use_tmp_dir = True
+    elif arg == "--outdir" and args:
+        custom_outdir = args.pop(0)
+    else:
+        parsed.append(arg)
+# replace sys.argv for downstream if needed
+sys.argv = sys.argv[:1] + parsed
+
+if serve_only_dir:
+    if not os.path.isdir(serve_only_dir):
+        print(f"❌ Directory not found: {serve_only_dir}")
+        sys.exit(1)
+    print(f"🚀 Launching Allure to serve existing results from {serve_only_dir} ...")
+    subprocess.run(["allure", "serve", serve_only_dir], shell=True)
+    sys.exit(0)
+
 # --- Load allure_config.toml if present ---
 config_file = Path("allure_config.toml")
 config = {}
@@ -135,14 +163,23 @@ def latest_pipeline_for_schedule(schedule_id: str):
         return None
     return max(data, key=lambda p: p.get("id", 0))
 
-# --- Main logic ---
-timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-tmpdir_obj = tempfile.TemporaryDirectory(prefix=f"allure-report_{timestamp}_", delete=False)
-tmp = tmpdir_obj.name
-combined_dir = os.path.join(tmp, "combined_allure_results")
-os.makedirs(combined_dir, exist_ok=True)
-print(f"📂 Created temporary directory {tmp}")
+# --- Output directory ---
+if use_tmp_dir:
+    base_dir_obj = tempfile.TemporaryDirectory(prefix="allure-report_", delete=False)
+    base_dir = base_dir_obj.name
+else:
+    base_out = Path("out")
+    base_out.mkdir(exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y_%m_%d-%H_%M")
+    dir_name = custom_outdir or timestamp
+    base_dir = str(base_out / dir_name)
+    Path(base_dir).mkdir(parents=True, exist_ok=True)
 
+combined_dir = os.path.join(base_dir, "combined_allure_results")
+os.makedirs(combined_dir, exist_ok=True)
+print(f"📂 Created output directory {base_dir}")
+
+# --- Main logic ---
 any_success = False
 seen = set()
 for entry in pipelines_cfg:
@@ -179,7 +216,7 @@ for entry in pipelines_cfg:
         print(f"❌ [{label}] Pipeline {resolved_id} is not successful (status={status})")
         continue
 
-    allure_src = download_artifacts(str(resolved_id), tmp, label)
+    allure_src = download_artifacts(str(resolved_id), base_dir, label)
     if allure_src:
         copy_allure_results(allure_src, combined_dir, label)
         any_success = True
@@ -190,5 +227,4 @@ if not any_success:
 
 print(f"🚀 Launching Allure to serve aggregated results from {combined_dir} ...")
 subprocess.run(["allure", "serve", combined_dir], shell=True)
-#tmpdir_obj.cleanup()
-
+# if not use_tmp_dir: keep output for inspection; temp dir auto-cleaned by OS later

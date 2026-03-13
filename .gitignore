@@ -2,3 +2,4 @@
 .venv
 node_modules
 allure_config.toml
+out/
