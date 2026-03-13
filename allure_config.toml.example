@@ -2,3 +2,4 @@ url = "https://gitlab.mycompany.com"
 project = "group/subgroup/my-project"
 token = "glpat-xxxxxxxxxxxx"
 job_name = "test-report"
+schedule_ids = ["123", "456"]  # optional: use schedule mode instead of single pipeline env var
