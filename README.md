@@ -24,21 +24,33 @@ job_name = "test-report"
 
 Run the Mise task to download artifacts and serve them:
 
-`mise run allure:serve <pipeline_id>`
+`mise run allure:serve`
 
-**Example:**
+**Configuration (pipelines with label):**
 
-`mise run allure:serve 123456`
+In `allure_config.toml`:
+```
+[gitlab]
+url = "https://gitlab.mycompany.com"
+project = "group/subgroup/my-project"
+token = "glpat-xxxxxxxxxxxx"
+job_name = "test-report"
 
-**Override the job name temporarily:**
+[[gitlab.pipelines]]
+label = "nightly"
+schedule_id = "123"  # picks latest successful pipeline from this schedule
 
-`GITLAB_JOB_NAME="e2e-results" mise run allure:serve 123456`
+[[gitlab.pipelines]]
+label = "hotfix"
+pipeline_id = "999999"  # uses this pipeline directly
+```
 
-**Schedule mode (multiple pipelines):**
+- Ogni entry deve avere `label` e uno tra `pipeline_id` oppure `schedule_id`.
+- Se è presente `pipeline_id`, viene usato direttamente.
+- Se è presente `schedule_id`, viene presa la pipeline più recente (ordine desc per id). Se lo stato non è `success`, viene stampato un errore.
+- Gli `allure-results` di tutte le pipeline successful vengono aggregati e serviti in un'unica istanza di Allure.
 
-- Add `schedule_ids = ["123", "456"]` under `[gitlab]` in `allure_config.toml`, or set `GITLAB_PIPELINE_SCHEDULE_IDS="123,456"`.
-- Run the same command: `mise run allure:serve anything` (the positional arg is ignored when schedule IDs are configured).
-- The script fetches the latest pipeline per schedule, warns on non-success statuses, downloads Allure artifacts from successful ones, merges results, and serves them once.
+**Note:** eventuali variabili legacy `GITLAB_PIPELINE_SCHEDULE_IDS` o `schedule_ids` nel config vengono ancora accettate e convertite in `pipelines` con label auto-generata, ma il formato sopra è preferito.
 
 ## Dependencies
 

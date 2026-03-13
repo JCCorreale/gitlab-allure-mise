@@ -10,11 +10,10 @@ _.python.venv = { path = ".venv", create = true }
 description = "Download Allure results from GitLab pipeline and serve them"
 
 usage = '''
-arg "<pipeline>" help="Pipeline ID"
-'''
+'''  # no positional args needed
 
 run = [
 'npm install --global allure-commandline',
 'pip install -r scripts/requirements.txt',
-'python scripts/allure_serve.py usage_pipeline'
+'python scripts/allure_serve.py'
 ]
