@@ -186,11 +186,18 @@ print(f"📂 Created output directory {base_dir}")
 # --- Main logic ---
 any_success = False
 failures = []
+failures_path = Path(base_dir) / "failures.txt"
+
+def record_failure(item: dict):
+    failures.append(item)
+    with open(failures_path, "a", encoding="utf-8") as f:
+        f.write(f"{item}\n")
+
 seen = set()
 for entry in pipelines_cfg:
     if not isinstance(entry, dict):
         print(f"⚠️ Invalid pipeline entry {entry}, skipping")
-        failures.append({"label": str(entry), "error": "invalid_entry"})
+        record_failure({"label": str(entry), "error": "invalid_entry"})
         continue
     label = entry.get("label") or entry.get("name") or "pipeline"
     pipeline_id = entry.get("pipeline_id")
@@ -208,16 +215,16 @@ for entry in pipelines_cfg:
     if pipeline_id:
         info = pipeline_info(str(pipeline_id))
         if not info:
-            failures.append({"label": label, "pipeline_id": str(pipeline_id), "error": "pipeline_fetch_failed"})
+            record_failure({"label": label, "pipeline_id": str(pipeline_id), "error": "pipeline_fetch_failed"})
             continue
     elif schedule_id:
         info = latest_pipeline_for_schedule(str(schedule_id))
         if not info:
-            failures.append({"label": label, "schedule_id": str(schedule_id), "error": "no_pipeline_found"})
+            record_failure({"label": label, "schedule_id": str(schedule_id), "error": "no_pipeline_found"})
             continue
     else:
         print(f"❌ [{label}] Missing pipeline_id or schedule_id, skipping")
-        failures.append({"label": label, "error": "missing_ids"})
+        record_failure({"label": label, "error": "missing_ids"})
         continue
 
     resolved_id = info.get("id")
@@ -225,7 +232,7 @@ for entry in pipelines_cfg:
     print(f"🔍 [{label}] Using pipeline {resolved_id} (status={status})")
     if status != "success":
         print(f"❌ [{label}] Pipeline {resolved_id} is not successful (status={status})")
-        failures.append({"label": label, "pipeline_id": str(resolved_id), "schedule_id": str(schedule_id) if schedule_id else None, "error": {"status": status}})
+        record_failure({"label": label, "pipeline_id": str(resolved_id), "schedule_id": str(schedule_id) if schedule_id else None, "error": {"status": status}})
         continue
 
     allure_src = download_artifacts(str(resolved_id), base_dir, label)
@@ -233,13 +240,9 @@ for entry in pipelines_cfg:
         copy_allure_results(allure_src, combined_dir, label)
         any_success = True
     else:
-        failures.append({"label": label, "pipeline_id": str(resolved_id), "schedule_id": str(schedule_id) if schedule_id else None, "error": "artifact_download_failed"})
+        record_failure({"label": label, "pipeline_id": str(resolved_id), "schedule_id": str(schedule_id) if schedule_id else None, "error": "artifact_download_failed"})
 
 if failures:
-    failures_path = Path(base_dir) / "failures.txt"
-    with open(failures_path, "w", encoding="utf-8") as f:
-        for item in failures:
-            f.write(f"{item}\n")
     print(f"⚠️ Failures logged to {failures_path}")
 
 if not any_success:
