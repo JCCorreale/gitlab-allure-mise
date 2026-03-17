@@ -7,6 +7,7 @@ import subprocess
 import requests
 import datetime
 import shutil
+import json
 from urllib.parse import quote
 from pathlib import Path
 
@@ -91,14 +92,16 @@ if not pipelines_cfg:
 api_root = f"{GITLAB_URL.rstrip('/')}/api/v4/projects/{quote(PROJECT_PATH, safe='')}"
 HEADERS = {"PRIVATE-TOKEN": TOKEN}
 
-def fetch_job_id(pipeline_id: str):
+
+def fetch_job(pipeline_id: str):
     jobs_url = f"{api_root}/pipelines/{pipeline_id}/jobs"
     resp = requests.get(jobs_url, headers=HEADERS)
     if not resp.ok:
         print(f"❌ Failed to fetch jobs for pipeline {pipeline_id}: {resp.status_code} {resp.text}")
         return None
     jobs = resp.json()
-    return next((j["id"] for j in jobs if j.get("name") == JOB_NAME), None)
+    return next((j for j in jobs if j.get("name") == JOB_NAME), None)
+
 
 def pipeline_info(pipeline_id: str):
     url = f"{api_root}/pipelines/{pipeline_id}"
@@ -108,10 +111,11 @@ def pipeline_info(pipeline_id: str):
         return None
     return resp.json()
 
-def download_artifacts(pipeline_id: str, workdir: str, label: str):
-    job_id = fetch_job_id(pipeline_id)
+
+def download_artifacts(pipeline_id: str, job: dict, workdir: str, label: str):
+    job_id = job.get("id")
     if not job_id:
-        print(f"❌ [{label}] Job '{JOB_NAME}' not found in pipeline {pipeline_id}.")
+        print(f"❌ [{label}] Job '{JOB_NAME}' has no id in pipeline {pipeline_id}.")
         return None
     artifact_url = f"{api_root}/jobs/{job_id}/artifacts"
     pipeline_dir = os.path.join(workdir, f"{label}_pipeline_{pipeline_id}")
@@ -140,6 +144,7 @@ def download_artifacts(pipeline_id: str, workdir: str, label: str):
                 print(f"⚠️ [{label}] Skipping {member.filename}: {e}")
     return allure_dir if os.path.isdir(allure_dir) else None
 
+
 def copy_allure_results(source_dir: str, dest_dir: str, label: str):
     if not os.path.isdir(source_dir):
         print(f"⚠️ [{label}] No allure-results at {source_dir}")
@@ -151,9 +156,11 @@ def copy_allure_results(source_dir: str, dest_dir: str, label: str):
         for file in files:
             shutil.copy2(os.path.join(root, file), os.path.join(target_root, file))
 
+
 def latest_pipeline_for_schedule(schedule_id: str):
-    url = f"{api_root}/pipeline_schedules/{schedule_id}/pipelines?per_page=50&order_by=id&sort=desc"
-    resp = requests.get(url, headers=HEADERS)
+    url = f"{api_root}/pipeline_schedules/{schedule_id}/pipelines"
+    params = {"per_page": 1, "page": 1, "order_by": "id", "sort": "desc"}
+    resp = requests.get(url, headers=HEADERS, params=params)
     if not resp.ok:
         print(f"❌ Failed to fetch pipelines for schedule {schedule_id}: {resp.status_code} {resp.text}")
         return None
@@ -161,7 +168,8 @@ def latest_pipeline_for_schedule(schedule_id: str):
     if not data:
         print(f"⚠️ No pipelines found for schedule {schedule_id}")
         return None
-    return max(data, key=lambda p: p.get("id", 0))
+    latest = data[0]
+    return latest
 
 # --- Output directory ---
 if custom_outdir:
@@ -188,10 +196,15 @@ any_success = False
 failures = []
 failures_path = Path(base_dir) / "failures.txt"
 
+
 def record_failure(item: dict):
     failures.append(item)
+    failures_path.parent.mkdir(parents=True, exist_ok=True)
     with open(failures_path, "a", encoding="utf-8") as f:
-        f.write(f"{item}\n")
+        f.write(json.dumps(item, ensure_ascii=True) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+
 
 seen = set()
 for entry in pipelines_cfg:
@@ -230,12 +243,19 @@ for entry in pipelines_cfg:
     resolved_id = info.get("id")
     status = info.get("status")
     print(f"🔍 [{label}] Using pipeline {resolved_id} (status={status})")
-    if status != "success":
-        print(f"❌ [{label}] Pipeline {resolved_id} is not successful (status={status})")
-        record_failure({"label": label, "pipeline_id": str(resolved_id), "schedule_id": str(schedule_id) if schedule_id else None, "error": {"status": status}})
+
+    job = fetch_job(str(resolved_id))
+    if not job:
+        record_failure({"label": label, "pipeline_id": str(resolved_id), "schedule_id": str(schedule_id) if schedule_id else None, "error": "job_not_found"})
         continue
 
-    allure_src = download_artifacts(str(resolved_id), base_dir, label)
+    job_status = job.get("status")
+    if job_status != "success":
+        print(f"❌ [{label}] Job '{JOB_NAME}' in pipeline {resolved_id} is not successful (status={job_status})")
+        record_failure({"label": label, "pipeline_id": str(resolved_id), "schedule_id": str(schedule_id) if schedule_id else None, "error": {"job_status": job_status}})
+        continue
+
+    allure_src = download_artifacts(str(resolved_id), job, base_dir, label)
     if allure_src:
         copy_allure_results(allure_src, combined_dir, label)
         any_success = True

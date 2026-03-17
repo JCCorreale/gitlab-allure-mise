@@ -17,7 +17,7 @@ cd gitlab-allure-mise
 url = "https://gitlab.mycompany.com"
 project = "group/subgroup/my-project"
 token = "glpat-xxxxxxxxxxxx"
-job_name = "test-report"
+job_name = "test-report"  # the job whose status/artifacts are used
 ```
 
 ## Usage
@@ -44,7 +44,7 @@ job_name = "test-report"
 
 [[gitlab.pipelines]]
 label = "nightly"
-schedule_id = "123"  # picks latest successful pipeline from this schedule
+schedule_id = "123"  # picks latest pipeline from this schedule
 
 [[gitlab.pipelines]]
 label = "hotfix"
@@ -53,10 +53,13 @@ pipeline_id = "999999"  # uses this pipeline directly
 
 - Ogni entry deve avere `label` e uno tra `pipeline_id` oppure `schedule_id`.
 - Se è presente `pipeline_id`, viene usato direttamente.
-- Se è presente `schedule_id`, viene presa la pipeline più recente (ordine desc per id). Se lo stato non è `success`, viene stampato un errore.
-- Gli `allure-results` di tutte le pipeline successful vengono aggregati e serviti in un'unica istanza di Allure.
+- Se è presente `schedule_id`, viene presa la pipeline più recente (ordine desc per id) dal relativo schedule.
+- Viene considerato solo lo stato del job `job_name` (deve essere `success`); se il job manca o non è `success`, viene registrato un errore.
+- Gli `allure-results` di tutte le pipeline con job riuscito vengono aggregati e serviti in un'unica istanza di Allure.
 
-**Note:** eventuali variabili legacy `GITLAB_PIPELINE_SCHEDULE_IDS` o `schedule_ids` nel config vengono ancora accettate e convertite in `pipelines` con label auto-generata, ma il formato sopra è preferito.
+**Errori e log:**
+- Ogni errore viene registrato subito in `failures.txt` all'interno della cartella di output, in formato JSON per riga (contiene label e id di schedule/pipeline).
+- Se non ci sono pipeline con job riuscito, il comando termina con errore.
 
 ## Dependencies
 
