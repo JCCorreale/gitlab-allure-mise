@@ -39,8 +39,18 @@ if dir_override:
     if not os.path.isdir(dir_override):
         print(f"❌ Directory not found: {dir_override}")
         sys.exit(1)
-    print(f"🚀 Launching Allure to serve existing results from {dir_override} ...")
-    subprocess.run(["allure", "serve", dir_override], shell=True)
+    # auto-detect allure results folder when pointing to a run root
+    combined_candidate = os.path.join(dir_override, "combined_allure_results")
+    allure_results_candidate = os.path.join(dir_override, "allure-results")
+    if os.path.isdir(combined_candidate):
+        serve_dir = combined_candidate
+    elif os.path.isdir(allure_results_candidate):
+        serve_dir = allure_results_candidate
+    else:
+        serve_dir = dir_override
+        print("ℹ️ No combined_allure_results or allure-results subfolder found; serving provided directory directly.")
+    print(f"🚀 Launching Allure to serve existing results from {serve_dir} ...")
+    subprocess.run(["allure", "serve", serve_dir], shell=True)
     sys.exit(0)
 
 # --- Load allure_config.toml if present ---
